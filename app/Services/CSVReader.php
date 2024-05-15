@@ -3,60 +3,49 @@
 namespace App\Services;
 
 use Generator;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use League\Csv\Reader;
+use League\Csv\Statement;
 
 class CSVReader
 {
-    /**
-     * @param string $path
-     * @param bool $skipHeader
-     * @return Generator
-     */
-    public static function readRows(string $path, bool $skipHeader = true): Generator
-    {
+    private Reader $csv;
 
+    public function __construct(string $path, string $delimiter = ',', int $headerOffset = 0)
+    {
         if (!Storage::disk('s3')->exists($path)) {
             throw new \RuntimeException('File not found');
         }
 
         $stream = Storage::disk('s3')->readStream($path);
-
-        while (!feof($stream)) {
-            if ($skipHeader) {
-                // Skip the first header row
-                $skipHeader = false;
-                continue;
-            }
-
-            $line = fgets($stream);
-            $row = str_getcsv($line);
-
-            yield $row;
-        }
-
-        fclose($stream);
+        $this->csv = Reader::createFromStream($stream);
+        $this->csv->setDelimiter($delimiter);
+        $this->csv->setHeaderOffset($headerOffset);
     }
 
     /**
-     * @param $generator
-     * @param $chunkSize
-     * @return Generator
+     * @return int
+     * @throws \League\Csv\Exception
      */
-    public static function chunkGenerator($generator, $chunkSize): Generator
+    public function countTotal(): int
     {
-        $chunk = [];
+        return $this->csv->count();
+    }
 
-        foreach ($generator as $row) {
-            $chunk[] = $row;
+    /**
+     * @param $offset
+     * @param $limit
+     * @return array
+     * @throws \League\Csv\Exception
+     * @throws \League\Csv\InvalidArgument
+     * @throws \League\Csv\SyntaxError
+     */
+    public function getCsvRecords($offset, $limit): array
+    {
+        $stmt = (new Statement())->offset($offset)->limit($limit);
+        $records = $stmt->process($this->csv);
 
-            if (count($chunk) === $chunkSize) {
-                yield $chunk;
-                $chunk = [];
-            }
-        }
-
-        if (count($chunk) > 0) {
-            yield $chunk;
-        }
+        return iterator_to_array($records);
     }
 }

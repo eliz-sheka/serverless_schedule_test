@@ -25,22 +25,16 @@ class UserScheduleSNSHandler extends BrefSnsHandler
 
             $user = User::query()->whereKey($message['UserID'])->firstOrFail();
             $userKey = $user->getKey();
+            $path = sprintf('users/%s/schedule/%s', $userKey, $message['FileName']);
 
-            $generator = CSVReader::readRows(sprintf('users/%s/schedule/%s', $userKey, $message['FileName']));
-            $chunksGenerator = CSVReader::chunkGenerator($generator, 1000);
+            $total = (new CSVReader($path))->countTotal();
+            Log::info('Total: '.$total);
+            $limit = 1000;
 
-            $chunks = 0;
-            $rows = 0;
-
-            foreach ($chunksGenerator as $data) {
-                CreateMeetings::dispatch($userKey, $data);
-
-                $chunks++;
-                $rows += count($data);
+            for ($offset = 0; $offset <= $total; $offset += $limit) {
+                CreateMeetings::dispatch($userKey, $path, $offset, $limit);
+                Log::info('Dispatched');
             }
-
-            Log::info('Chunks count: '.$chunks);
-            Log::info('Rows count: '.$rows);
         }
     }
 }
