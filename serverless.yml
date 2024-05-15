@@ -12,13 +12,13 @@ provider:
       SESSION_DRIVER: cookie
       DB_CONNECTION: mysql
       SQS_PREFIX: !Join
-        - ""
-        - - "https://sqs."
-          - !Ref "AWS::Region"
-          - ".amazonaws.com/"
-          - !Ref "AWS::AccountId"
-          - "/"
-          - "laravel-serveless-test-dev-jobs"
+        - ''
+        - - 'https://sqs.'
+          - !Ref 'AWS::Region'
+          - '.amazonaws.com/'
+          - !Ref 'AWS::AccountId'
+          - '/'
+          - 'laravel-serveless-test-dev-jobs'
       QUEUE_CONNECTION: sqs
       DB_HOST: laravel-serveless-test-dev-mysqlrdsinstance-4kfgcokwbn32.cxuuquyy2ebh.us-east-1.rds.amazonaws.com
       DB_USERNAME: ${ssm:/sandbox/serverless-test/rds-username}
@@ -41,7 +41,11 @@ provider:
           - 'ssm:GetParameter'
           - 'ssm:GetParametersByPath'
         Resource:
-          - 'arn:aws:ssm:us-east-1::parameter/*'
+          !Join:
+            - ''
+            - - 'arn:aws:ssm:'
+              - !Ref 'AWS::Region'
+              - '::parameter/*'
       - Effect: "Allow"
         Action:
           - 'sqs:SendMessage'
@@ -49,7 +53,13 @@ provider:
           - 'sqs:ReceiveMessage'
           - 'sqs:DeleteMessage'
         Resource:
-          - 'arn:aws:sqs:us-east-1:211125325981:laravel-serveless-test-dev-jobs'
+          !Join:
+            - ''
+            - - 'arn:aws:sqs:'
+              - !Ref 'AWS::Region'
+              - ':'
+              - !Ref 'AWS::AccountId'
+              - 'laravel-serveless-test-dev-jobs'
 
 package:
     # Files and directories to exclude from deployment
@@ -71,8 +81,6 @@ functions:
         timeout: 28 # in seconds (API Gateway has a timeout of 29 seconds)
         events:
             - httpApi: '*'
-            - sqs:
-                arn: arn:aws:sqs:us-east-1:211125325981:laravel-serveless-test-dev-jobs
 
     # This function lets us run artisan commands in Lambda
     artisan:
@@ -81,16 +89,39 @@ functions:
         timeout: 720 # in seconds
 
     sns:
-      handler: App\Handlers\SNSHandler
+      handler: App\Handlers\UserScheduleSNSHandler
       runtime: php-82
       timeout: 28
       events:
         - sns:
-            arn: { "Fn::Join" : ["", ["arn:aws:sns:${self:provider.region}:", { "Ref" : "AWS::AccountId" }, ":UserEvents" ] ]  }
+            arn:
+              !Join:
+                - ''
+                - - 'arn:aws:sqs:'
+                  - !Ref 'AWS::Region'
+                  - ':'
+                  - !Ref 'AWS::AccountId'
+                  - ':UserEvents'
             topicName: UserEvents
             filterPolicy:
               MessageType:
                 - ScheduleLoaded
+
+    sqs:
+      handler: Bref\LaravelBridge\Queue\QueueHandler
+      runtime: php-82
+      timeout: 28
+      events:
+        - sqs:
+          arn:
+            !Join:
+              - ''
+              - - 'arn:aws:sqs:'
+                - !Ref 'AWS::Region'
+                - ':'
+                - !Ref 'AWS::AccountId'
+                - 'laravel-serveless-test-dev-jobs'
+
 
 plugins:
     # We need to include the Bref plugin
