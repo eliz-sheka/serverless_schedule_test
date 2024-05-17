@@ -6,11 +6,10 @@ use App\Models\User;
 use App\Services\CSVReader;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 
 class CreateMeetings implements ShouldQueue
 {
@@ -32,16 +31,19 @@ class CreateMeetings implements ShouldQueue
     }
 
     /**
+     * @param CSVReader $reader
      * @return void
      * @throws \League\Csv\Exception
      * @throws \League\Csv\InvalidArgument
      * @throws \League\Csv\SyntaxError
      */
-    public function handle(): void
+    public function handle(CSVReader $reader): void
     {
         /** @var User $user */
         $user = User::query()->whereKey($this->userId)->firstOrFail();
-        $records = (new CSVReader($this->filepath))->getCsvRecords($this->offset, $this->limit);
+
+        $csv = $reader->createFromStream($this->filepath);
+        $records = $reader->getCsvRecords($csv, $this->offset, $this->limit);
 
         foreach ($records as $activity) {
             if ('meeting' !== $activity['Type']) {
@@ -54,8 +56,8 @@ class CreateMeetings implements ShouldQueue
                     'start_time' => $activity['Start_time'],
                     'end_time' => $activity['End_time'],
                 ]);
-            } catch (QueryException $e) {
-                Log::error($e->getMessage());
+            } catch (UniqueConstraintViolationException $e) {
+                // Skip
             }
         }
     }

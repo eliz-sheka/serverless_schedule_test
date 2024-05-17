@@ -12,28 +12,43 @@ use Illuminate\Support\Facades\Log;
 
 class UserScheduleSNSHandler extends BrefSnsHandler
 {
+    /**
+     * @param CSVReader $csvReader
+     */
+    public function __construct(private CSVReader $csvReader)
+    {
 
+    }
+
+    /**
+     * @param SnsEvent $event
+     * @param Context $context
+     * @return void
+     * @throws \Bref\Event\InvalidLambdaEvent
+     * @throws \League\Csv\Exception
+     * @throws \League\Csv\InvalidArgument
+     */
     public function handleSns(SnsEvent $event, Context $context): void
     {
         foreach ($event->getRecords() as $record) {
             $message = json_decode($record->getMessage(), true);
 
             if (!isset($message['UserID']) || !isset($message['FileName'])) {
-                Log::info($record->getMessage());
                 throw new \RuntimeException('Message attribute "UserID" or "FileName" missing');
             }
 
-            $user = User::query()->whereKey($message['UserID'])->firstOrFail();
-            $userKey = $user->getKey();
+            $userKey = $message['UserID'];
+            User::query()->whereKey($userKey)->firstOrFail();
+
             $path = sprintf('users/%s/schedule/%s', $userKey, $message['FileName']);
 
-            $total = (new CSVReader($path))->countTotal();
+            $total = $this->csvReader->createFromStream($path)->count();
             Log::info('Total: '.$total);
+
             $limit = 1000;
 
             for ($offset = 0; $offset <= $total; $offset += $limit) {
                 CreateMeetings::dispatch($userKey, $path, $offset, $limit);
-                Log::info('Dispatched');
             }
         }
     }
